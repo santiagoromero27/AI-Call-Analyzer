@@ -1,0 +1,16 @@
+.env
+.DS_Store
+*.pyc
+__pycache__/
+*.db
+*.db-shm
+*.db-wal
+venv/
+.venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+*.wav
+*.mp3
+*.m4a

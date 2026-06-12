@@ -1,0 +1,37 @@
+{
+  "default": {
+    "criteria": [
+      {
+        "name": "caller_intent",
+        "description": "Caller expressed genuine intent to get coverage — asked about price, plans, or next steps, and showed no hard disqualifying objection (e.g. 'just browsing', wrong state, already covered)",
+        "weight": 15
+      },
+      {
+        "name": "qualification",
+        "description": "Agent confirmed the caller's eligibility: age, health/tobacco status, desired coverage amount, and budget — enough to select a real plan",
+        "weight": 20
+      },
+      {
+        "name": "product_fit",
+        "description": "Agent presented a specific plan (carrier, coverage, monthly premium) that matched the caller's stated needs and budget; caller acknowledged understanding the offer",
+        "weight": 15
+      },
+      {
+        "name": "verbal_commitment",
+        "description": "Caller gave a clear verbal yes or agreed to move forward with the application — explicit buy signal was captured by the agent",
+        "weight": 20
+      },
+      {
+        "name": "application_attempt",
+        "description": "Agent actively initiated the application: requested payment information (bank account, routing number, or card), SSN, beneficiary details, or began completing the form with the caller",
+        "weight": 20
+      },
+      {
+        "name": "objection_resolution",
+        "description": "Any price, coverage, trust, or 'I need to think about it' objections were addressed and resolved before or during the application step — not left hanging",
+        "weight": 10
+      }
+    ],
+    "min_duration_seconds": 30
+  }
+}
