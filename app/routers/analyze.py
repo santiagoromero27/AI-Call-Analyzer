@@ -1,5 +1,4 @@
 """Cross-call analysis page with time-range filter and Claude chat."""
-import json
 from datetime import datetime, timedelta
 
 from anthropic import Anthropic
@@ -33,113 +32,119 @@ def _week_bounds(offset: int = 0):
     return datetime(start.year, start.month, start.day), datetime(end.year, end.month, end.day, 23, 59, 59)
 
 
-_ANALYZE_BODY = """
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.2rem">
-  <h1 style="margin:0">Cross-call Analysis</h1>
-</div>
-<div class="card" style="margin-bottom:1.5rem">
-  <form id="filter-form" style="display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-end">
-    <label class="field" style="margin:0;flex:0 0 auto">
-      Time range
-      <select name="range" id="range-select"
-        style="margin-top:.3rem;padding:.45rem .75rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.875rem">
-        <option value="this_week">This week</option>
-        <option value="last_week">Last week</option>
-        <option value="custom">Custom range</option>
-        <option value="all">All time</option>
-      </select>
-    </label>
-    <span id="custom-fields" style="display:none;display:flex;gap:.5rem;align-items:flex-end">
-      <label class="field" style="margin:0">
-        From
-        <input type="date" name="from_date" id="from_date"
-          style="margin-top:.3rem;padding:.45rem .75rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.875rem">
-      </label>
-      <label class="field" style="margin:0">
-        To
-        <input type="date" name="to_date" id="to_date"
-          style="margin-top:.3rem;padding:.45rem .75rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.875rem">
-      </label>
-    </span>
-    <button class="btn" type="button" id="apply-filter" style="margin-bottom:2px">Apply</button>
-  </form>
-  <div id="call-count" style="font-size:.8rem;color:#94a3b8;margin-top:.6rem"></div>
-</div>
-<h2>Ask questions about these calls</h2>
-<div id="chat-wrap">
-  <div id="messages">
-    <div class="msg assistant">Select a time range and click Apply, then ask me anything — e.g. "What are the top 2 reasons callers didn't buy a policy?" or "Which agents had the most failed conversions?"</div>
-  </div>
-  <form id="chat-form">
-    <input id="chat-input" type="text" placeholder="Ask about this batch of calls…" autocomplete="off">
-    <button id="send-btn" type="submit">Send</button>
-  </form>
-</div>
-<script>
-const rangeSelect=document.getElementById('range-select');
-const customFields=document.getElementById('custom-fields');
-const applyBtn=document.getElementById('apply-filter');
-const countEl=document.getElementById('call-count');
-const form=document.getElementById('chat-form');
-const input=document.getElementById('chat-input');
-const btn=document.getElementById('send-btn');
-const msgs=document.getElementById('messages');
-
-let currentRange={range:'this_week'};
-let chatHistory=[];
-
-rangeSelect.addEventListener('change',()=>{
-  customFields.style.display=rangeSelect.value==='custom'?'flex':'none';
-});
-
-function addMsg(role,text){
-  const d=document.createElement('div');
-  d.className='msg '+role; d.textContent=text;
-  msgs.appendChild(d); msgs.scrollTop=msgs.scrollHeight;
-}
-
-applyBtn.addEventListener('click',async()=>{
-  currentRange={range:rangeSelect.value};
-  if(rangeSelect.value==='custom'){
-    currentRange.from_date=document.getElementById('from_date').value;
-    currentRange.to_date=document.getElementById('to_date').value;
-  }
-  chatHistory=[];
-  // Ask server how many calls are in range
-  const params=new URLSearchParams(currentRange);
-  const r=await fetch('/analyze/count?'+params);
-  const d=await r.json();
-  countEl.textContent=d.count+' calls in this range';
-  msgs.innerHTML='';
-  addMsg('assistant','Loaded '+d.count+' calls. What would you like to know?');
-});
-
-form.addEventListener('submit',async e=>{
-  e.preventDefault();
-  const text=input.value.trim(); if(!text) return;
-  addMsg('user',text);
-  chatHistory.push({role:'user',content:text});
-  input.value=''; btn.disabled=true; btn.textContent='…';
-  try{
-    const r=await fetch('/analyze/chat',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({message:text,range:currentRange,history:chatHistory.slice(0,-1)})
-    });
-    const d=await r.json();
-    const reply=d.reply||d.detail||'Error';
-    addMsg('assistant',reply);
-    chatHistory.push({role:'assistant',content:reply});
-  }catch(err){addMsg('assistant','Request failed: '+err.message);}
-  finally{btn.disabled=false;btn.textContent='Send';input.focus();}
-});
-</script>
-"""
-
-
 @router.get("/analyze", response_class=HTMLResponse)
 def analyze_page():
-    return page("Analyze", _ANALYZE_BODY)
+    send_ico = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M5 12l15-7-7 15-2-6-6-2z"/></svg>'
+    spark_ico = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/></svg>'
+    SUGGESTIONS = [
+        "What are the most common reasons callers didn't apply?",
+        "Which publisher sends the most qualified callers?",
+        "How do agents handle price objections?",
+        "What % of calls reached the application step?",
+    ]
+    suggests_html = "".join(
+        f'<button class="suggest-btn" onclick="sendMsg(this.querySelector(\'span\').textContent)">'
+        f'{spark_ico}<span>{s}</span></button>'
+        for s in SUGGESTIONS
+    )
+    body = f"""<div style="display:flex;justify-content:center;height:100%">
+<div class="ask-wrap">
+  <div class="range-bar">
+    <select id="range-select">
+      <option value="this_week">This week</option>
+      <option value="last_week">Last week</option>
+      <option value="all">All time</option>
+      <option value="custom">Custom range</option>
+    </select>
+    <span id="custom-dates" style="display:none;gap:6px;align-items:center">
+      <input type="date" id="from-date">
+      <span style="color:var(--text-3);font-size:12px">to</span>
+      <input type="date" id="to-date">
+    </span>
+    <button class="btn btn-sm" id="apply-btn">Apply</button>
+    <span class="call-count-badge" id="call-count"></span>
+  </div>
+  <div class="chat-scroll" id="chat-scroll">
+    <div class="msg-ai"><div class="msg-av">AI</div>
+      <div class="bubble-ai">Select a time range and click Apply, then ask me anything about those calls.</div>
+    </div>
+    <div class="suggest-list">{suggests_html}</div>
+  </div>
+  <div class="chat-foot">
+    <div class="composer" id="composer">
+      <textarea id="chat-input" rows="1" placeholder="Ask about these calls…"></textarea>
+      <button class="send-btn" id="send-btn" disabled>{send_ico}</button>
+    </div>
+  </div>
+</div>
+</div>"""
+
+    js = """<script>
+const rangeSelect = document.getElementById('range-select');
+const customDates = document.getElementById('custom-dates');
+const applyBtn = document.getElementById('apply-btn');
+const countEl = document.getElementById('call-count');
+const scroll = document.getElementById('chat-scroll');
+const inp = document.getElementById('chat-input');
+const btn = document.getElementById('send-btn');
+let currentRange = {range:'this_week'};
+let chatHistory = [];
+rangeSelect.addEventListener('change', () => {
+  customDates.style.display = rangeSelect.value === 'custom' ? 'flex' : 'none';
+});
+inp.addEventListener('input', () => {
+  inp.style.height = 'auto'; inp.style.height = inp.scrollHeight + 'px';
+  btn.disabled = !inp.value.trim();
+});
+inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!btn.disabled) send(); }});
+btn.addEventListener('click', send);
+applyBtn.addEventListener('click', async () => {
+  currentRange = {range: rangeSelect.value};
+  if (rangeSelect.value === 'custom') {
+    currentRange.from_date = document.getElementById('from-date').value;
+    currentRange.to_date = document.getElementById('to-date').value;
+  }
+  chatHistory = [];
+  const params = new URLSearchParams(currentRange);
+  const r = await fetch('/analyze/count?' + params);
+  const d = await r.json();
+  countEl.textContent = d.count + ' calls';
+  scroll.innerHTML = '';
+  addBubble('ai', 'Loaded ' + d.count + ' calls. What would you like to know?');
+});
+function addBubble(role, text) {
+  const d = document.createElement('div');
+  d.className = role === 'user' ? 'msg-user' : 'msg-ai';
+  d.innerHTML = role === 'user'
+    ? '<div class="bubble-user">' + text + '</div>'
+    : '<div class="msg-av">AI</div><div class="bubble-ai">' + text + '</div>';
+  scroll.appendChild(d); scroll.scrollTop = scroll.scrollHeight;
+}
+function sendMsg(text) { inp.value = text; btn.disabled = false; send(); }
+function send() {
+  const text = inp.value.trim(); if (!text) return;
+  addBubble('user', text);
+  chatHistory.push({role:'user', content:text});
+  inp.value = ''; inp.style.height = 'auto'; btn.disabled = true;
+  const dot = document.createElement('div');
+  dot.className = 'msg-ai'; dot.id = 'typing';
+  dot.innerHTML = '<div class="msg-av">AI</div><div class="typing"><span></span><span></span><span></span></div>';
+  scroll.appendChild(dot); scroll.scrollTop = scroll.scrollHeight;
+  fetch('/analyze/chat', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({message:text, range:currentRange, history:chatHistory.slice(0,-1)})
+  }).then(r => r.json()).then(d => {
+    document.getElementById('typing')?.remove();
+    const reply = d.reply || d.detail || 'Error';
+    addBubble('ai', reply);
+    chatHistory.push({role:'assistant', content:reply});
+  }).catch(err => {
+    document.getElementById('typing')?.remove();
+    addBubble('ai', 'Request failed: ' + err.message);
+  });
+}
+</script>"""
+    return page("Ask", body, active_nav="analyze", full_bleed=True, extra_js=js)
 
 
 def _load_calls(db: Session, range_params: dict) -> list[models.Call]:

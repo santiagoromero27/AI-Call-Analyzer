@@ -10,7 +10,7 @@ from .. import models
 from ..config import settings
 from ..database import get_db
 from ..schemas import ChatRequest
-from .shared_ui import page, badge_score
+from .shared_ui import page, score_pill
 
 router = APIRouter()
 
@@ -166,98 +166,166 @@ def call_detail(call_id: str, db: Session = Depends(get_db)):
     if not call:
         raise HTTPException(404, "Call not found")
 
-    # Metadata card
-    def meta(label: str, value: str) -> str:
-        return f'<div class="meta-item"><div class="label">{label}</div><div class="value">{value or "—"}</div></div>'
+    # Parse transcript
+    segments = json.loads(call.transcript) if call.transcript else []
 
-    duration_str = f"{call.duration_seconds}s" if call.duration_seconds else "—"
-    meta_html = f"""<div class="card">
-  <div class="meta-grid">
-    {meta("Caller ID", call.caller_id)}
-    {meta("Publisher", call.publisher)}
-    {meta("Buyer", call.buyer)}
-    {meta("Campaign", call.campaign_name)}
-    {meta("Duration", duration_str)}
-    {meta("Termination", call.termination_reason)}
-    {meta("No-payout reason", call.no_payout_reason)}
-    <div class="meta-item">
-      <div class="label">Score</div>
-      <div class="value">{badge_score(call.total_score)}</div>
-    </div>
-    {meta("Date", call.created_at.strftime("%b %d, %Y %H:%M"))}
-  </div>
+    # Metadata grid
+    def mc(k, v, mono=False):
+        mono_cls = ' style="font-family:var(--mono);font-size:12.5px"' if mono else ""
+        return f'<div class="meta-cell"><div class="k">{k}</div><div class="v"{mono_cls}>{v or "—"}</div></div>'
+
+    dur = f"{call.duration_seconds}s" if call.duration_seconds else "—"
+    meta_html = f"""<div class="meta-grid">
+  {mc("Timestamp", call.created_at.strftime("%Y-%m-%d %H:%M"), mono=True)}
+  {mc("Caller ID", call.caller_id, mono=True)}
+  {mc("Campaign", call.campaign_name)}
+  {mc("Length", dur, mono=True)}
+  {mc("Publisher", call.publisher)}
+  {mc("Buyer", call.buyer)}
+  {mc("Termination", call.termination_reason)}
+  {mc("No-payout reason", call.no_payout_reason)}
 </div>"""
 
-    barrier_html = ""
-    if call.conversion_barrier:
-        barrier_html = f"""<div style="background:#fef9c3;border-left:4px solid #eab308;
-padding:.85rem 1.1rem;border-radius:0 8px 8px 0;margin-bottom:1rem;font-size:.875rem;line-height:1.6">
-<span style="font-weight:600;color:#854d0e">Why it didn't close: </span>{call.conversion_barrier}
+    # AI summary section
+    score_data = json.loads(call.score_json) if call.score_json else {}
+    summary_text = score_data.get("summary", "") or call.conversion_barrier or ""
+    barrier_text = call.conversion_barrier or ""
+    if call.status == "pending":
+        ai_html = '<div style="color:var(--text-3);font-size:13px;padding:14px 0">Processing… check back in a moment.</div>'
+    elif summary_text:
+        barrier_line = f'<div style="margin-top:10px;padding-top:10px;border-top:1px solid #e6e6f6;font-size:13px;color:var(--text-2)"><strong style="color:#854d0e">Why it didn\'t close:</strong> {barrier_text}</div>' if barrier_text and barrier_text != summary_text else ""
+        ai_html = f"""<div class="ai-summary">
+  <div class="ai-head"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/></svg>Generated from transcript</div>
+  {summary_text}{barrier_line}
 </div>"""
-    elif call.status == "pending":
-        barrier_html = '<div class="card" style="color:#94a3b8">Processing… check back in a moment.</div>'
+    else:
+        ai_html = ""
+
+    # Transcript
+    transcript_html = ""
+    if segments:
+        utts = ""
+        for s in segments:
+            speaker = s.get("speaker", "unknown")
+            t = s.get("start", 0)
+            mins, secs = divmod(int(t), 60)
+            t_str = f"{mins}:{secs:02d}"
+            utts += f"""<div class="utt">
+  <div class="who {speaker}">{speaker.title()}<div class="utime">{t_str}</div></div>
+  <div class="txt">{s.get("text","")}</div>
+</div>"""
+        transcript_html = f'<div class="transcript-wrap">{utts}</div>'
 
     # Chat history
-    history = (
-        db.query(models.ChatMessage)
-        .filter(models.ChatMessage.call_db_id == call.id)
-        .order_by(models.ChatMessage.created_at)
-        .all()
+    history = (db.query(models.ChatMessage)
+               .filter(models.ChatMessage.call_db_id == call.id)
+               .order_by(models.ChatMessage.created_at).all())
+
+    SUGGESTIONS = [
+        "Summarize this call in one line",
+        "What objections did the caller raise?",
+        "Why did the call end this way?",
+        "What should the agent have done differently?",
+    ]
+    spark_ico = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/></svg>'
+    send_ico = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M5 12l15-7-7 15-2-6-6-2z"/></svg>'
+
+    suggests_html = "".join(
+        f'<button class="suggest-btn" onclick="sendMsg(this.querySelector(\'span\').textContent)">'
+        f'{spark_ico}<span>{s}</span></button>'
+        for s in SUGGESTIONS
     )
-    msg_html = "".join(f'<div class="msg {m.role}">{m.content}</div>' for m in history)
-    if not msg_html:
-        msg_html = '<div class="msg assistant">Ask me anything about this call — e.g. "At what point did the caller lose interest?" or "How should the agent have handled the price objection?"</div>'
 
-    chat_js = f"""<script>
-const form=document.getElementById('chat-form');
-const input=document.getElementById('chat-input');
-const btn=document.getElementById('send-btn');
-const msgs=document.getElementById('messages');
-function addMsg(role,text){{
-  const d=document.createElement('div');
-  d.className='msg '+role; d.textContent=text;
-  msgs.appendChild(d); msgs.scrollTop=msgs.scrollHeight;
-}}
-form.addEventListener('submit',async e=>{{
-  e.preventDefault();
-  const text=input.value.trim(); if(!text) return;
-  addMsg('user',text); input.value='';
-  btn.disabled=true; btn.textContent='…';
-  try{{
-    const r=await fetch('/calls/{call_id}/chat',{{
-      method:'POST',headers:{{'Content-Type':'application/json'}},
-      body:JSON.stringify({{message:text}})
-    }});
-    const d=await r.json();
-    addMsg('assistant',d.reply||d.detail||'Error');
-  }}catch(err){{addMsg('assistant','Request failed: '+err.message);}}
-  finally{{btn.disabled=false;btn.textContent='Send';input.focus();}}
-}});
-msgs.scrollTop=msgs.scrollHeight;
-</script>"""
+    msgs_html = ""
+    if not history:
+        msgs_html = f'<div class="msg-ai"><div class="msg-av">AI</div><div class="bubble-ai">Ask me anything about this call. Try a suggestion below.</div></div><div class="suggest-list">{suggests_html}</div>'
+    else:
+        for m in history:
+            if m.role == "user":
+                msgs_html += f'<div class="msg-user"><div class="bubble-user">{m.content}</div></div>'
+            else:
+                msgs_html += f'<div class="msg-ai"><div class="msg-av">AI</div><div class="bubble-ai">{m.content}</div></div>'
 
-    body = f"""
-<div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem">
-  <a href="/" style="color:#64748b;font-size:.875rem;text-decoration:none">← All calls</a>
-  <h1 style="margin:0;flex:1">Call — {call.caller_id or call_id}</h1>
+    chat_panel = f"""<div class="detail-sidebar">
+<div class="chat-panel">
+  <div class="chat-head">
+    <div>
+      <div class="chat-head-title">Chat with this call</div>
+      <div class="chat-head-sub">Scoped to this recording</div>
+    </div>
+  </div>
+  <div class="chat-scroll" id="chat-scroll">{msgs_html}</div>
+  <div class="chat-foot">
+    <div class="composer" id="composer">
+      <textarea id="chat-input" rows="1" placeholder="Ask about this call…"></textarea>
+      <button class="send-btn" id="send-btn" disabled>{send_ico}</button>
+    </div>
+  </div>
+</div>
+</div>"""
+
+    title_pill = score_pill(call.total_score)
+    breadcrumb = f'<span class="crumb" onclick="location.href=\'/\'" style="cursor:pointer">Calls</span><span class="crumb-sep"> / </span><span>{call.caller_id or call_id}</span>'
+
+    main_body = f"""<div class="detail-title">
+  {call.caller_id or call_id} {title_pill}
   <form method="post" action="/calls/{call_id}/delete"
-    onsubmit="return confirm('Delete this call and all its chat history? This cannot be undone.')">
-    <button type="submit"
-      style="padding:.4rem .85rem;background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;
-             border-radius:6px;cursor:pointer;font-size:.8rem;font-weight:600">
-      Delete
-    </button>
+    onsubmit="return confirm('Delete this call and all chat history?')" style="margin-left:auto">
+    <button type="submit" class="btn btn-danger btn-sm">Delete</button>
   </form>
 </div>
 {meta_html}
-{barrier_html}
-<h2>Chat about this call</h2>
-<div id="chat-wrap">
-  <div id="messages">{msg_html}</div>
-  <form id="chat-form">
-    <input id="chat-input" type="text" placeholder="Ask about this call…" autocomplete="off" autofocus>
-    <button id="send-btn" type="submit">Send</button>
-  </form>
-</div>"""
+<div class="section-title">{spark_ico} AI Summary</div>
+{ai_html}
+{"<div class='section-title'>Transcript</div>" + transcript_html if transcript_html else ""}"""
 
-    return page(f"Call — {call.caller_id or call_id}", body, chat_js)
+    body = f'<div class="detail-grid"><div class="detail-main">{main_body}</div>{chat_panel}</div>'
+
+    chat_js = f"""<script>
+const inp = document.getElementById('chat-input');
+const btn = document.getElementById('send-btn');
+const scroll = document.getElementById('chat-scroll');
+inp.addEventListener('input', () => {{
+  inp.style.height = 'auto';
+  inp.style.height = inp.scrollHeight + 'px';
+  btn.disabled = !inp.value.trim();
+}});
+inp.addEventListener('keydown', e => {{ if (e.key === 'Enter' && !e.shiftKey) {{ e.preventDefault(); if (!btn.disabled) send(); }} }});
+btn.addEventListener('click', send);
+function sendMsg(text) {{ inp.value = text; btn.disabled = false; send(); }}
+function addBubble(role, text) {{
+  const d = document.createElement('div');
+  d.className = role === 'user' ? 'msg-user' : 'msg-ai';
+  d.innerHTML = role === 'user'
+    ? '<div class="bubble-user">' + text + '</div>'
+    : '<div class="msg-av">AI</div><div class="bubble-ai">' + text + '</div>';
+  scroll.appendChild(d);
+  scroll.scrollTop = scroll.scrollHeight;
+}}
+function send() {{
+  const text = inp.value.trim(); if (!text) return;
+  addBubble('user', text); inp.value = ''; inp.style.height = 'auto';
+  btn.disabled = true;
+  const dot = document.createElement('div');
+  dot.className = 'msg-ai'; dot.id = 'typing';
+  dot.innerHTML = '<div class="msg-av">AI</div><div class="typing"><span></span><span></span><span></span></div>';
+  scroll.appendChild(dot); scroll.scrollTop = scroll.scrollHeight;
+  fetch('/calls/{call_id}/chat', {{
+    method: 'POST', headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{message: text}})
+  }}).then(r => r.json()).then(d => {{
+    document.getElementById('typing')?.remove();
+    addBubble('ai', d.reply || d.detail || 'Error');
+  }}).catch(err => {{
+    document.getElementById('typing')?.remove();
+    addBubble('ai', 'Request failed: ' + err.message);
+  }});
+}}
+scroll.scrollTop = scroll.scrollHeight;
+</script>"""
+
+    return page(
+        f"Call — {call.caller_id or call_id}", body,
+        active_nav="calls", full_bleed=True,
+        breadcrumb=breadcrumb, extra_js=chat_js,
+    )

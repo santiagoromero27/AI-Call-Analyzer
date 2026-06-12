@@ -15,63 +15,65 @@ from .shared_ui import page
 router = APIRouter()
 
 _FORM_BODY = """
-<h1>Upload Calls</h1>
-<div class="tab-section">
-<div class="tabs">
-  <button class="tab active" data-target="url-tab">Single URL</button>
-  <button class="tab" data-target="csv-tab">CSV Batch</button>
-</div>
+<div class="upload-wrap">
+  <div class="tab-section">
+    <div class="tabs">
+      <button class="tab-btn active" data-target="url-tab">Single URL</button>
+      <button class="tab-btn" data-target="csv-tab">CSV Batch</button>
+    </div>
 
-<div id="url-tab" class="tab-pane active">
-  <p style="font-size:.875rem;color:#64748b;margin-top:0">
-    Paste an S3 recording URL directly and run it through the pipeline.
-  </p>
-  <form method="post" action="/upload/url">
-    <label class="field">Recording URL (S3 / presigned)
-      <input type="url" name="recording_url" placeholder="https://s3.amazonaws.com/…" required>
-    </label>
-    <label class="field">Caller ID
-      <input type="text" name="caller_id" placeholder="+15551234567">
-    </label>
-    <label class="field">Publisher
-      <input type="text" name="publisher" placeholder="e.g. Flex Marketing" required>
-    </label>
-    <label class="field">Buyer
-      <input type="text" name="buyer" placeholder="e.g. TrueChoice" required>
-    </label>
-    <label class="field">Campaign
-      <input type="text" name="campaign_name" placeholder="e.g. FE Inbounds">
-    </label>
-    <label class="field">Termination reason
-      <input type="text" name="termination_reason" placeholder="e.g. Caller hung up">
-    </label>
-    <button class="btn" type="submit" style="margin-top:1.2rem">Process call</button>
-  </form>
-</div>
+    <div id="url-tab" class="tab-pane active">
+      <div class="dropzone" style="padding:28px 24px;text-align:left">
+        <form method="post" action="/upload/url">
+          <label class="field-label">Recording URL (S3 / presigned)
+            <input type="url" name="recording_url" placeholder="https://s3.amazonaws.com/…" required>
+          </label>
+          <label class="field-label">Caller ID
+            <input type="text" name="caller_id" placeholder="+15551234567">
+          </label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <label class="field-label">Publisher
+              <input type="text" name="publisher" placeholder="Flex Marketing" required>
+            </label>
+            <label class="field-label">Buyer
+              <input type="text" name="buyer" placeholder="TrueChoice" required>
+            </label>
+          </div>
+          <label class="field-label">Campaign
+            <input type="text" name="campaign_name" placeholder="FE Inbounds">
+          </label>
+          <label class="field-label">Termination reason
+            <input type="text" name="termination_reason" placeholder="Caller hung up">
+          </label>
+          <button type="submit" class="btn btn-primary" style="margin-top:18px">Process call →</button>
+        </form>
+      </div>
+    </div>
 
-<div id="csv-tab" class="tab-pane">
-  <p style="font-size:.875rem;color:#64748b;margin-top:0">
-    Upload a Moja export CSV. Required column: <code>Recording URL</code>.<br>
-    Recognised columns: <code>Call ID, Caller ID, Publisher, Buyer, Campaign,
-    Total Call Length, Termination Reason, No Payout Reason</code>.
-  </p>
-  <form method="post" action="/upload/csv" enctype="multipart/form-data">
-    <label class="field">CSV file
-      <input type="file" name="file" accept=".csv,text/csv" required>
-    </label>
-    <label class="field">Batch name (optional)
-      <input type="text" name="batch_name" placeholder="e.g. June 11 leads">
-    </label>
-    <button class="btn" type="submit" style="margin-top:1.2rem">Start batch</button>
-  </form>
-</div>
-</div>
-"""
+    <div id="csv-tab" class="tab-pane">
+      <div class="dropzone" id="dropzone">
+        <div class="dz-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 16V4"/><path d="M8 8l4-4 4 4"/><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+        </div>
+        <div class="dz-title">Drop your call CSV here</div>
+        <div class="dz-sub">Timestamp · Campaign · Publisher · Buyer · Caller ID · Recording URL</div>
+        <form method="post" action="/upload/csv" enctype="multipart/form-data" style="margin-top:16px">
+          <input type="file" name="file" accept=".csv,text/csv" id="csv-file"
+            style="display:none" onchange="this.form.submit()">
+          <button type="button" class="btn btn-primary" onclick="document.getElementById('csv-file').click()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5z"/><path d="M14 3v5h5"/></svg>
+            Select CSV file
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>"""
 
 
 @router.get("/upload", response_class=HTMLResponse)
 async def upload_form():
-    return page("Upload", _FORM_BODY)
+    return page("Upload", _FORM_BODY, active_nav="upload")
 
 
 # ── Single URL ────────────────────────────────────────────────────────────────
@@ -123,7 +125,7 @@ def _norm(h: str) -> str:
 
 @router.get("/upload/csv", response_class=HTMLResponse)
 async def csv_form():
-    return page("Upload", _FORM_BODY)
+    return page("Upload", _FORM_BODY, active_nav="upload")
 
 
 @router.post("/upload/csv")
