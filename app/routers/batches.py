@@ -10,6 +10,7 @@ from .. import models
 from ..config import settings
 from ..database import get_db
 from ..schemas import ChatRequest
+from ..services.model_settings import get_model
 
 router = APIRouter()
 
@@ -189,7 +190,7 @@ def batch_chat(batch_id: int, req: ChatRequest, db: Session = Depends(get_db)):
     messages.append({"role": "user", "content": req.message})
 
     response = _get_client().messages.create(
-        model=settings.CLAUDE_MODEL,
+        model=get_model(),
         max_tokens=1200,
         messages=messages,
     )
@@ -205,20 +206,18 @@ def batch_chat(batch_id: int, req: ChatRequest, db: Session = Depends(get_db)):
 def _build_batch_context(batch: models.Batch, calls: list) -> str:
     scored = [c for c in calls if c.total_score is not None]
     avg = round(sum(c.total_score for c in scored) / len(scored), 1) if scored else 0
-    billable = sum(1 for c in calls if c.billable)
 
     lines = [
         f"BATCH: {batch.name or f'Batch #{batch.id}'}",
-        f"Calls: {len(calls)} | Scored: {len(scored)} | Billable: {billable}/{len(calls)} | Avg score: {avg}/100",
+        f"Calls: {len(calls)} | Scored: {len(scored)} | Avg score: {avg}/100",
         "",
         "CALL-BY-CALL BREAKDOWN:",
     ]
     for i, c in enumerate(calls, 1):
         score_str = f"{c.total_score:.0f}/100" if c.total_score else "not scored"
-        billable_str = "billable" if c.billable else "not billable"
         lines.append(
             f"{i}. {c.caller_id or c.call_id} | {c.publisher} → {c.buyer}"
-            f" | Score: {score_str} | {billable_str}"
+            f" | Score: {score_str}"
         )
         if c.termination_reason:
             lines.append(f"   Termination: {c.termination_reason}")

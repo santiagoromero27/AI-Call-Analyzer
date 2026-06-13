@@ -10,6 +10,7 @@ import os
 from anthropic import Anthropic
 
 from ..config import settings
+from .model_settings import get_model
 
 _client: Anthropic | None = None
 
@@ -81,7 +82,7 @@ Return ONLY valid JSON — no markdown fences, no extra text:
 }}"""
 
     response = _get_client().messages.create(
-        model=settings.CLAUDE_MODEL,
+        model=get_model(),
         max_tokens=1800,
         messages=[{"role": "user", "content": prompt}],
     )

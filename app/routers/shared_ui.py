@@ -1,4 +1,5 @@
 """Shared design system, sidebar, and page wrapper."""
+from ..services.model_settings import get_model_key
 
 _ICONS = {
     "calls":    '<path d="M3 5.5C3 4.7 3.7 4 4.5 4h2.6c.6 0 1.1.4 1.3 1l1 3c.1.5 0 1-.4 1.3L7.6 11.4a12 12 0 005 5l1.1-1.4c.3-.4.8-.5 1.3-.4l3 1c.6.2 1 .7 1 1.3v2.6c0 .8-.7 1.5-1.5 1.5A14.5 14.5 0 013 5.5z"/>',
@@ -235,6 +236,15 @@ table.calls tbody tr:last-child td{border-bottom:none}
                              padding:5px 8px;font:inherit;font-size:13px;background:var(--bg);
                              color:var(--text);outline:none}
 .call-count-badge{font-size:12px;color:var(--text-3);font-family:var(--mono);margin-left:auto}
+
+/* ── Model picker (sidebar footer) ── */
+.model-picker{margin-top:auto;padding:12px 8px 4px;border-top:1px solid var(--border)}
+.model-picker .mp-label{font-size:10.5px;font-weight:600;color:var(--text-3);
+                         text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.model-picker select{width:100%;padding:6px 8px;border-radius:var(--radius-sm);font:inherit;
+                     font-size:12px;border:1px solid var(--border-2);background:var(--bg);
+                     color:var(--text);outline:none;cursor:pointer}
+.model-picker select:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-tint)}
 """
 
 
@@ -267,6 +277,21 @@ def _sidebar(active: str, call_count: int | None = None) -> str:
         cls = "nav-item active" if active == key else "nav-item"
         cnt = f'<span class="nav-count">{count}</span>' if count else ""
         rows += f'<a href="{href}" class="{cls}">{_icon_svg(icon, 16)}{label}{cnt}</a>\n'
+
+    mk = get_model_key()
+    def _opt(key: str, label: str) -> str:
+        sel = ' selected' if mk == key else ''
+        return f'<option value="{key}"{sel}>{label}</option>'
+
+    model_picker = f"""<div class="model-picker">
+  <div class="mp-label">AI Model</div>
+  <select id="model-select" onchange="switchModel(this.value)">
+    {_opt("haiku",  "Haiku 4.5 — fastest")}
+    {_opt("sonnet", "Sonnet 4.6 — balanced")}
+    {_opt("opus",   "Opus 4.8 — smartest")}
+  </select>
+</div>"""
+
     return f"""<aside class="sidebar">
   <div class="brand">
     <div class="brand-mark">{_icon_svg("spark", 14, 2.2)}</div>
@@ -274,6 +299,7 @@ def _sidebar(active: str, call_count: int | None = None) -> str:
   </div>
   <div class="nav-label">Workspace</div>
   {rows}
+  {model_picker}
 </aside>"""
 
 
@@ -306,7 +332,17 @@ def page(
   <div class="{content_cls}">{body}</div>
 </main>
 </div></div>
-{_TAB_JS}{extra_js}</body></html>"""
+{_TAB_JS}
+<script>
+function switchModel(key) {{
+  fetch('/settings/model', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{key}})
+  }});
+}}
+</script>
+{extra_js}</body></html>"""
 
 
 def score_pill(score: float | None) -> str:

@@ -10,6 +10,7 @@ from .. import models
 from ..config import settings
 from ..database import get_db
 from ..schemas import ChatRequest
+from ..services.model_settings import get_model
 from .shared_ui import page
 
 router = APIRouter()
@@ -227,7 +228,7 @@ def analyze_chat(req: AnalyzeChatRequest, db: Session = Depends(get_db)):
     messages.append({"role": "user", "content": req.message})
 
     response = _get_client().messages.create(
-        model=settings.CLAUDE_MODEL,
+        model=get_model(),
         max_tokens=1000,
         messages=messages,
     )
