@@ -5,6 +5,7 @@ _ICONS = {
     "calls":    '<path d="M3 5.5C3 4.7 3.7 4 4.5 4h2.6c.6 0 1.1.4 1.3 1l1 3c.1.5 0 1-.4 1.3L7.6 11.4a12 12 0 005 5l1.1-1.4c.3-.4.8-.5 1.3-.4l3 1c.6.2 1 .7 1 1.3v2.6c0 .8-.7 1.5-1.5 1.5A14.5 14.5 0 013 5.5z"/>',
     "upload":   '<path d="M12 16V4"/><path d="M8 8l4-4 4 4"/><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/>',
     "ask":      '<path d="M21 11.5a8.4 8.4 0 01-9 8.4L4 21l1.1-3.5A8.5 8.5 0 1121 11.5z"/><circle cx="8.5" cy="11.5" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="11.5" r="1" fill="currentColor" stroke="none"/><circle cx="15.5" cy="11.5" r="1" fill="currentColor" stroke="none"/>',
+    "batches":  '<path d="M12 2L2 7l10 5 10-5-10-5zM2 12l10 5 10-5M2 17l10 5 10-5"/>',
     "spark":    '<path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/>',
     "search":   '<circle cx="11" cy="11" r="7"/><path d="M21 21l-3.5-3.5"/>',
     "arrow":    '<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>',
@@ -268,9 +269,10 @@ def _icon_svg(name: str, size: int = 16, stroke: float = 1.75, cls: str = "") ->
 
 def _sidebar(active: str, call_count: int | None = None) -> str:
     items = [
-        ("calls",   "/",        "calls",  "Calls",  str(call_count) if call_count is not None else ""),
-        ("upload",  "/upload",  "upload", "Upload", ""),
-        ("analyze", "/analyze", "ask",    "Ask",    ""),
+        ("calls",   "/",        "calls",   "Calls",   str(call_count) if call_count is not None else ""),
+        ("batches", "/batches", "batches", "Batches", ""),
+        ("upload",  "/upload",  "upload",  "Upload",  ""),
+        ("analyze", "/analyze", "ask",     "Ask",     ""),
     ]
     rows = ""
     for key, href, icon, label, count in items:

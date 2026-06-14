@@ -1,4 +1,5 @@
 """Cross-call analysis page with time-range filter and Claude chat."""
+import json
 from datetime import datetime, timedelta
 
 from anthropic import Anthropic
@@ -209,7 +210,18 @@ def analyze_chat(req: AnalyzeChatRequest, db: Session = Depends(get_db)):
             parts.append(f"termination={c.termination_reason}")
         if c.conversion_barrier:
             parts.append(f"barrier={c.conversion_barrier}")
-        summaries.append(" | ".join(parts))
+        entry = " | ".join(parts)
+        if c.transcript:
+            try:
+                segments = json.loads(c.transcript)
+                transcript_text = "\n".join(
+                    f"  [{s['start']:.1f}s] {s['speaker'].upper()}: {s['text']}"
+                    for s in segments
+                )
+                entry += f"\nTRANSCRIPT:\n{transcript_text}"
+            except Exception:
+                pass
+        summaries.append(entry)
 
     range_label = req.range.get("range", "all time").replace("_", " ")
     system_ctx = (

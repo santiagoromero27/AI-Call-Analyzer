@@ -51,19 +51,25 @@ _FORM_BODY = """
     </div>
 
     <div id="csv-tab" class="tab-pane">
-      <div class="dropzone" id="dropzone">
-        <div class="dz-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 16V4"/><path d="M8 8l4-4 4 4"/><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
-        </div>
-        <div class="dz-title">Drop your call CSV here</div>
-        <div class="dz-sub">Timestamp · Campaign · Publisher · Buyer · Caller ID · Recording URL</div>
-        <form method="post" action="/upload/csv" enctype="multipart/form-data" style="margin-top:16px">
-          <input type="file" name="file" accept=".csv,text/csv" id="csv-file"
-            style="display:none" onchange="this.form.submit()">
-          <button type="button" class="btn btn-primary" onclick="document.getElementById('csv-file').click()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5z"/><path d="M14 3v5h5"/></svg>
-            Select CSV file
-          </button>
+      <div class="dropzone" style="padding:28px 24px;text-align:left">
+        <form method="post" action="/upload/csv" enctype="multipart/form-data">
+          <label class="field-label">Group name
+            <input type="text" name="batch_name" placeholder="e.g. June Week 1, TrueChoice Inbounds">
+          </label>
+          <div style="margin-top:16px">
+            <input type="file" name="file" accept=".csv,text/csv" id="csv-file" style="display:none"
+              onchange="document.getElementById('csv-name').textContent=this.files[0].name;document.getElementById('csv-name').style.display='block';document.getElementById('csv-submit').style.display='inline-flex'">
+            <div id="csv-name" style="display:none;font-size:12.5px;color:var(--acc);font-family:var(--mono);margin-bottom:10px;word-break:break-all"></div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <button type="button" class="btn btn-sm" onclick="document.getElementById('csv-file').click()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5z"/><path d="M14 3v5h5"/></svg>
+                Choose CSV file
+              </button>
+              <button type="submit" id="csv-submit" class="btn btn-primary btn-sm" style="display:none">
+                Process batch →
+              </button>
+            </div>
+          </div>
         </form>
       </div>
     </div>
@@ -172,4 +178,4 @@ async def upload_csv(
         db.close()
 
     Thread(target=process_batch, args=(batch_id, rows), daemon=True).start()
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse(f"/batches/{batch_id}", status_code=303)
