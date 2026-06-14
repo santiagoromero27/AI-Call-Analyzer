@@ -1,9 +1,9 @@
-"""Batch management: group list, detail with chat, and cross-call AI chat."""
+"""Batch management: group list, detail view, and dedicated AI chat screen."""
 import json
 
 from anthropic import Anthropic
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from .. import models
@@ -293,20 +293,50 @@ def batch_detail(batch_id: int, db: Session = Depends(get_db)):
       <thead><tr>
         <th>Caller ID</th><th>Publisher</th><th>Buyer</th><th>Termination</th><th>Score</th>
       </tr></thead>
-      <tbody>{rows or '<tr><td colspan="5" style="text-align:center;color:var(--text-3);padding:32px">No calls yet</td></tr>'}</tbody>
+      <tbody>{rows or '<tr><td colspan="5" style="text-align:center;color:var(--text-3);padding:32px">No calls yet — processing in background</td></tr>'}</tbody>
     </table>
   </div>
 </div>"""
 
-    main_body = f"""<div class="detail-title">{batch.name or f"Batch #{batch_id}"}</div>
+    body = f"""<div class="content-pad">
+<div class="detail-title">{batch.name or f"Batch #{batch_id}"}</div>
 {meta_html}
 {progress_html}
 <div class="section-title">{spark_ico} Calls</div>
-{table_html}"""
+{table_html}
+</div>"""
 
-    # Chat panel
-    send_ico = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M5 12l15-7-7 15-2-6-6-2z"/></svg>'
-    spark_ico2 = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/></svg>'
+    breadcrumb = (
+        f'<span class="crumb" onclick="location.href=\'/batches\'" style="cursor:pointer">Batches</span>'
+        f'<span class="crumb-sep"> / </span>'
+        f'<span>{batch.name or f"Batch #{batch_id}"}</span>'
+    )
+
+    ask_ico = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M21 11.5a8.4 8.4 0 01-9 8.4L4 21l1.1-3.5A8.5 8.5 0 1121 11.5z"/><circle cx="8.5" cy="11.5" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="11.5" r="1" fill="currentColor" stroke="none"/><circle cx="15.5" cy="11.5" r="1" fill="currentColor" stroke="none"/></svg>'
+    topbar_extra = f'<a href="/batches/{batch_id}/analyze" class="btn btn-sm btn-primary">{ask_ico} Ask AI</a>'
+
+    auto_refresh = "<script>setTimeout(() => location.reload(), 8000);</script>" if processing else ""
+
+    return page(
+        f"Batch — {batch.name or batch_id}", body,
+        active_nav="batches",
+        breadcrumb=breadcrumb,
+        topbar_extra=topbar_extra,
+        extra_js=auto_refresh,
+    )
+
+
+@router.get("/batches/{batch_id}/analyze", response_class=HTMLResponse)
+def batch_analyze(batch_id: int, db: Session = Depends(get_db)):
+    batch = db.query(models.Batch).filter(models.Batch.id == batch_id).first()
+    if not batch:
+        raise HTTPException(404, "Batch not found")
+
+    scored_count = (
+        db.query(models.Call)
+        .filter(models.Call.batch_id == batch_id, models.Call.total_score.isnot(None))
+        .count()
+    )
 
     history = (
         db.query(models.BatchMessage)
@@ -315,15 +345,18 @@ def batch_detail(batch_id: int, db: Session = Depends(get_db)):
         .all()
     )
 
+    send_ico = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M5 12l15-7-7 15-2-6-6-2z"/></svg>'
+    spark_ico = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/></svg>'
+
     SUGGESTIONS = [
         "Why didn't most callers apply?",
         "Which publisher sends the best callers?",
-        "What % reached the application step?",
+        "What % of calls reached the application step?",
         "How do agents handle price objections?",
     ]
     suggests_html = "".join(
         f'<button class="suggest-btn" onclick="sendMsg(this.querySelector(\'span\').textContent)">'
-        f'{spark_ico2}<span>{s}</span></button>'
+        f'{spark_ico}<span>{s}</span></button>'
         for s in SUGGESTIONS
     )
 
@@ -331,7 +364,7 @@ def batch_detail(batch_id: int, db: Session = Depends(get_db)):
     if not history:
         msgs_html = (
             f'<div class="msg-ai"><div class="msg-av">AI</div>'
-            f'<div class="bubble-ai">Ask me anything about this group of calls.</div></div>'
+            f'<div class="bubble-ai">Ask me anything about calls in this group. Try a suggestion below.</div></div>'
             f'<div class="suggest-list">{suggests_html}</div>'
         )
     else:
@@ -341,41 +374,37 @@ def batch_detail(batch_id: int, db: Session = Depends(get_db)):
             else:
                 msgs_html += f'<div class="msg-ai"><div class="msg-av">AI</div><div class="bubble-ai">{m.content}</div></div>'
 
-    chat_panel = f"""<div class="detail-sidebar">
-<div class="chat-panel">
-  <div class="chat-head">
-    <div>
-      <div class="chat-head-title">Ask about this group</div>
-      <div class="chat-head-sub">{len(calls)} calls · {len(scored)} scored</div>
-    </div>
+    body = f"""<div style="display:flex;justify-content:center;height:100%">
+<div class="ask-wrap">
+  <div class="range-bar">
+    <span style="font-size:13px;font-weight:600;color:var(--text)">{batch.name or f"Batch #{batch_id}"}</span>
+    <span class="call-count-badge">{scored_count} scored calls</span>
   </div>
   <div class="chat-scroll" id="chat-scroll">{msgs_html}</div>
   <div class="chat-foot">
     <div class="composer" id="composer">
-      <textarea id="chat-input" rows="1" placeholder="Ask about this batch…"></textarea>
+      <textarea id="chat-input" rows="1" placeholder="Ask about this group…"></textarea>
       <button class="send-btn" id="send-btn" disabled>{send_ico}</button>
     </div>
   </div>
 </div>
 </div>"""
 
-    body = f'<div class="detail-grid"><div class="detail-main">{main_body}</div>{chat_panel}</div>'
-
     breadcrumb = (
         f'<span class="crumb" onclick="location.href=\'/batches\'" style="cursor:pointer">Batches</span>'
         f'<span class="crumb-sep"> / </span>'
-        f'<span>{batch.name or f"Batch #{batch_id}"}</span>'
+        f'<span class="crumb" onclick="location.href=\'/batches/{batch_id}\'" style="cursor:pointer">'
+        f'{batch.name or f"Batch #{batch_id}"}</span>'
+        f'<span class="crumb-sep"> / </span>'
+        f'<span>Ask AI</span>'
     )
 
-    auto_refresh = "setTimeout(() => location.reload(), 8000);" if processing and not history else ""
-
-    chat_js = f"""<script>
+    js = f"""<script>
 const inp = document.getElementById('chat-input');
 const btn = document.getElementById('send-btn');
 const scroll = document.getElementById('chat-scroll');
 inp.addEventListener('input', () => {{
-  inp.style.height = 'auto';
-  inp.style.height = inp.scrollHeight + 'px';
+  inp.style.height = 'auto'; inp.style.height = inp.scrollHeight + 'px';
   btn.disabled = !inp.value.trim();
 }});
 inp.addEventListener('keydown', e => {{ if (e.key === 'Enter' && !e.shiftKey) {{ e.preventDefault(); if (!btn.disabled) send(); }} }});
@@ -387,13 +416,12 @@ function addBubble(role, text) {{
   d.innerHTML = role === 'user'
     ? '<div class="bubble-user">' + text + '</div>'
     : '<div class="msg-av">AI</div><div class="bubble-ai">' + text + '</div>';
-  scroll.appendChild(d);
-  scroll.scrollTop = scroll.scrollHeight;
+  scroll.appendChild(d); scroll.scrollTop = scroll.scrollHeight;
 }}
 function send() {{
   const text = inp.value.trim(); if (!text) return;
-  addBubble('user', text); inp.value = ''; inp.style.height = 'auto';
-  btn.disabled = true;
+  addBubble('user', text);
+  inp.value = ''; inp.style.height = 'auto'; btn.disabled = true;
   const dot = document.createElement('div');
   dot.className = 'msg-ai'; dot.id = 'typing';
   dot.innerHTML = '<div class="msg-av">AI</div><div class="typing"><span></span><span></span><span></span></div>';
@@ -410,16 +438,10 @@ function send() {{
   }});
 }}
 scroll.scrollTop = scroll.scrollHeight;
-{auto_refresh}
 </script>"""
 
     return page(
-        f"Batch — {batch.name or batch_id}", body,
+        f"Ask — {batch.name or batch_id}", body,
         active_nav="batches", full_bleed=True,
-        breadcrumb=breadcrumb, extra_js=chat_js,
+        breadcrumb=breadcrumb, extra_js=js,
     )
-
-
-@router.get("/batches/{batch_id}/analyze", response_class=HTMLResponse)
-def batch_analyze(batch_id: int):
-    return RedirectResponse(f"/batches/{batch_id}", status_code=302)
